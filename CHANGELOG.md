@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+- 播放支持左右平衡：新增 `worlds.audio.balance`（-100 全左 … 100 全右，0 居中）和播放页滑杆；`audio_play`、`audio_say` 可按条或按句指定 `balance`。原生 PCM 输出按左右声道衰减；Windows 的 PowerShell 兜底同步支持，Linux 的 ffplay 兜底使用 pan 滤镜；macOS 的 afplay 没有左右调节，退回它时该参数不生效。
+
+## 0.1.1
+
+- 市场卡片不再标「仅 Windows」：去掉继承自声音扩展的 `os` 限制，三个平台的安装不再被标记限制。
+
 ## 0.1.0
 
 - 从 `cortico-world-voice` 分出的跨平台版本，包名 `@aqualcross/cortico-world-audio`。
