@@ -18,7 +18,7 @@ import { runMusicCommand } from './music-command.ts';
 import { convertLongAudio } from './rvc-long.ts';
 import { FIRERED_VAD_FILES, PARAFORMER_FILES, SENSEVOICE_FILES, TIER_SPECS } from './catalog.ts';
 import { synthesizeCloudStream } from './cloud.ts';
-import { synthesizeEdgeStream } from './edge.ts';
+import { EdgeSpeaker } from './edge.ts';
 import { GptSovitsService, gptSovitsMissing, type GptSovitsSetup } from './gpt-sovits.ts';
 import { formatFromName, transcribeDashscope, transcribeDashscopeAsync, transcribeOpenai } from './stt.ts';
 import { ClipsStore, type ClipRecord } from './clips.ts';
@@ -419,6 +419,8 @@ export class AudioWorld implements World {
   private speakSeq = 0;
   /** 兜底播放时写临时文件用的序号。 */
   private sayFileSeq = 0;
+  /** Edge 连接复用：新建连接要 1 s 左右，同音色连说不要每次重连。 */
+  private readonly edgeSpeaker = new EdgeSpeaker();
   /** World 停一次加一，用来丢掉停止之前提交、还在合成的那些。 */
   private speakGen = 0;
   private host: WorldHost | null = null;
@@ -734,6 +736,7 @@ export class AudioWorld implements World {
     this.asr = null;
     await this.sovits?.stop();
     this.sovits = null;
+    this.edgeSpeaker.close();
     this.rvcCache?.engine.dispose();
     this.rvcCache = null;
     this.singCache?.engine.dispose();
@@ -1982,7 +1985,7 @@ export class AudioWorld implements World {
     if (engine === 'edge') {
       const e = cfg.speak.edge;
       const usedVoice = voice?.trim() || e.voice.trim();
-      return synthesizeEdgeStream({ text, voice: usedVoice, rate: e.rate, pitch: e.pitch, signal });
+      return this.edgeSpeaker.stream({ text, voice: usedVoice, rate: e.rate, pitch: e.pitch, signal });
     }
     if (engine === 'gpt-sovits') {
       const g = cfg.speak.gptSovits;
