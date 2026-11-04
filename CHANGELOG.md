@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- 说话改为流式：Edge、本机 GPT-SoVITS 与 OpenAI 兼容接口边合成边交给 ffmpeg 解码播放，不再等整句；播放队列在当前句开播时预取下一条，连续说话不再等合成。缺 ffmpeg 或原生输出时自动退回收齐再播；流式 WAV 落盘前补长度，记录能读出准确时长。
+- Edge 连接按音色复用，同一音色连说不再每次重连；新建连接约 1 秒的代价只付一次，之后首音约 0.3 秒。
+- 说话首块 PCM 到达时写一条「说话首音」日志（`worlds.audio`），带播放等待与合成耗时。
+
 ## 0.1.2
 
 - 播放支持左右平衡：新增 `worlds.audio.balance`（-100 全左 … 100 全右，0 居中）和播放页滑杆；`audio_play`、`audio_say` 可按条或按句指定 `balance`。原生 PCM 输出按左右声道衰减；Windows 的 PowerShell 兜底同步支持，Linux 的 ffplay 兜底使用 pan 滤镜；macOS 的 afplay 没有左右调节，退回它时该参数不生效。
