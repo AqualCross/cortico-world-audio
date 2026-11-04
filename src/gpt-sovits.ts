@@ -7,6 +7,7 @@ import { existsSync, lstatSync, mkdirSync, readlinkSync, readdirSync, rmSync, sy
 import { join, resolve } from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { killTree } from './platform.ts';
+import { readBody, type EncodedSpeech } from './speech.ts';
 
 export interface GptSovitsSetup {
   /** 上游项目根（依赖页装的那份）。 */
@@ -131,7 +132,8 @@ export class GptSovitsService {
     return this.starting;
   }
 
-  async synthesize(text: string, voice: GptSovitsVoice, signal: AbortSignal): Promise<Buffer> {
+  /** 一句，边生成边给 WAV 字节（头 + 连续 PCM 块）；上游 2 = 按句尽快出块、3 = 定长块更快。 */
+  async synthesizeStream(text: string, voice: GptSovitsVoice, signal: AbortSignal): Promise<EncodedSpeech> {
     await this.start();
     this.touchIdle();
     const res = await fetch(`${this.baseUrl}/tts`, {
@@ -144,14 +146,25 @@ export class GptSovitsService {
         prompt_text: voice.promptText,
         prompt_lang: voice.promptLang || 'auto',
         media_type: 'wav',
-        streaming_mode: false,
+        streaming_mode: 2,
         speed_factor: voice.speed,
         seed: -1,
       }),
       signal,
     });
     if (!res.ok) throw new Error(`GPT-SoVITS 合成失败（HTTP ${res.status}）。\n${(await res.text()).slice(0, 600)}`);
-    return Buffer.from(await res.arrayBuffer());
+    if (!res.body) {
+      const bytes = Buffer.from(await res.arrayBuffer());
+      return { format: 'wav', chunks: (async function* () { yield bytes; })() };
+    }
+    return { format: 'wav', chunks: readBody(res.body) };
+  }
+
+  async synthesize(text: string, voice: GptSovitsVoice, signal: AbortSignal): Promise<Buffer> {
+    const speech = await this.synthesizeStream(text, voice, signal);
+    const parts: Buffer[] = [];
+    for await (const chunk of speech.chunks) parts.push(Buffer.from(chunk));
+    return Buffer.concat(parts);
   }
 
   async stop(): Promise<void> {
