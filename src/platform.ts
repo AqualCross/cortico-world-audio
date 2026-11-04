@@ -23,10 +23,24 @@ export function killTree(pid: number): void {
   }
 }
 
+/** ffplay 的左右平衡滤镜；居中返回 null。只压远端，不抬近端。 */
+export function panFilter(balance: number): string | null {
+  const pan = Number.isFinite(balance) ? Math.max(-1, Math.min(1, balance / 100)) : 0;
+  if (pan === 0) return null;
+  const left = pan > 0 ? 1 - pan : 1;
+  const right = pan < 0 ? 1 + pan : 1;
+  return `pan=stereo|c0=${left.toFixed(3)}*c0|c1=${right.toFixed(3)}*c1`;
+}
+
 /** 没有 audify 时的系统播放器：macOS afplay；Linux ffplay（随 ffmpeg 一起装）。 */
-export function fallbackPlayer(ffmpeg: string, path: string, volume: number): { cmd: string; args: string[] } | null {
+export function fallbackPlayer(ffmpeg: string, path: string, volume: number, balance = 0): { cmd: string; args: string[] } | null {
+  // afplay 没有左右调节；装了 audify 时走 PCM 主路径，不受影响。
   if (isMac) return { cmd: 'afplay', args: ['-v', String(Math.max(0, Math.min(1, volume / 100))), path] };
   if (isWindows) return null;
   const cmd = ffmpeg ? join(dirname(ffmpeg), 'ffplay') : 'ffplay';
-  return { cmd, args: ['-nodisp', '-autoexit', '-volume', String(Math.max(0, Math.min(100, Math.round(volume)))), path] };
+  const args = ['-nodisp', '-autoexit', '-volume', String(Math.max(0, Math.min(100, Math.round(volume))))];
+  const filter = panFilter(balance);
+  if (filter) args.push('-af', filter);
+  args.push(path);
+  return { cmd, args };
 }

@@ -55,7 +55,7 @@ import { detectFfmpeg, installFfmpeg, probeFfmpeg, type FfmpegInfo } from './ffm
 import { PcmOutput, loadAudify } from './audio-out.ts';
 import { playFile, playFileStream } from './play.ts';
 import { ToolTextStore } from './tool-text.ts';
-import { PlayQueue } from './queue.ts';
+import { PlayQueue, clampBalance } from './queue.ts';
 import { SubtitleOverlay, type SubtitleStyle } from './subtitle.ts';
 import { detectUv, installUv, probeUv, type UvInfo } from './uv.ts';
 
@@ -189,6 +189,8 @@ interface SpeakJob {
   text: string;
   voice?: string;
   instruction?: string;
+  /** -100（全左）… 100（全右）；缺省用配置里的平衡。 */
+  balance?: number;
   /** 只合成不播放；完成时推 audio.say_done 带回路径。 */
   silent?: boolean;
 }
@@ -216,6 +218,7 @@ export const AUDIO_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
         path: { type: 'string', description: 'Absolute path to the audio file; give this or handle.' },
         handle: { type: 'string', description: 'A log:/mem: blob handle for the audio; give this or path.' },
         volume: { type: 'number', minimum: 0, maximum: 100, description: 'Volume for this item; defaults to the configured volume.' },
+        balance: { type: 'number', minimum: -100, maximum: 100, description: 'Left/right balance for this item: -100 hard left, 0 center, 100 hard right. Defaults to the configured balance.' },
       },
     },
   },
@@ -229,6 +232,7 @@ export const AUDIO_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
       properties: {
         text: { type: 'string', description: 'The line to say.', maxLength: 2000 },
         voice: { type: 'string', description: 'Optional voice for this line; empty uses the configured one.' },
+        balance: { type: 'number', minimum: -100, maximum: 100, description: 'Left/right balance when this line is played: -100 hard left, 0 center, 100 hard right. Defaults to the configured balance.' },
         silent: { type: 'boolean', description: 'Synthesize only; do not play.' },
       },
       required: ['text'],
@@ -498,7 +502,7 @@ export class AudioWorld implements World {
     this.sensevoiceEnvJob = new UvPackagesJob(() => asrEnvDir(this.roots), async () => (await this.uvInfo()).path ?? '', STT_PACKAGES, STT_CHECK);
     this.uvJob = new UvJob(() => uvDir(this.opts.dataDir), () => this.uvInfo());
     this.ffmpegJob = new FfmpegJob(() => audioPath(this.opts.dataDir, 'ffmpeg'), () => this.ffmpegInfo());
-    this.queue = new PlayQueue((o) => this.playAny(o), () => this.opts.cfg.volume, {
+    this.queue = new PlayQueue((o) => this.playAny(o), () => this.opts.cfg.volume, () => this.opts.cfg.balance ?? 0, {
       onStart: (item) => this.subtitle.show(item.text, item.seconds, this.subtitleStyle()),
       onEnd: () => this.subtitle.hide(),
     });
@@ -734,7 +738,7 @@ export class AudioWorld implements World {
   }
 
   /** 有 audify + ffmpeg 时每条播放新开一条 PCM 输出（跟随当前默认设备），否则退回系统播放器。 */
-  private async playAny(opts: { path: string; volume: number; signal: AbortSignal }): Promise<void> {
+  private async playAny(opts: { path: string; volume: number; balance: number; signal: AbortSignal }): Promise<void> {
     const audify = loadAudify();
     const ffmpeg = (await this.ffmpegInfo()).path;
     if (audify && ffmpeg) {
@@ -1954,7 +1958,8 @@ export class AudioWorld implements World {
         }
         if (!existsSync(path)) return `[audio_play 没执行] 没有这个文件：${path}`;
         const volume = typeof args.volume === 'number' ? args.volume : undefined;
-        const { id, position } = this.queue.enqueue({ path, volume, origin: 'tool' });
+        const balance = typeof args.balance === 'number' ? clampBalance(args.balance) : undefined;
+        const { id, position } = this.queue.enqueue({ path, volume, balance, origin: 'tool' });
         return `已加入播放队列 ${id}（第 ${position} 条）：${path}`;
       },
     };
@@ -2066,8 +2071,9 @@ export class AudioWorld implements World {
         if (!text) return '[audio_say 没执行] 需要 text。';
         const voice = args.voice ? String(args.voice) : undefined;
         const instruction = args.instruction ? String(args.instruction) : undefined;
+        const balance = typeof args.balance === 'number' ? clampBalance(args.balance) : undefined;
         const silent = args.silent === true;
-        const job: SpeakJob = { id: `say${++this.speakSeq}`, text, voice, instruction, silent };
+        const job: SpeakJob = { id: `say${++this.speakSeq}`, text, voice, instruction, balance, silent };
         const ahead = (this.speakBusy ? 1 : 0) + this.speakJobs.length;
         this.speakJobs.push(job);
         void this.drainSpeak();
@@ -2112,6 +2118,7 @@ export class AudioWorld implements World {
           this.queue.enqueue({
             path: clip.path,
             origin: 'tool',
+            balance: job.balance,
             text: clip.text,
             seconds: clip.seconds ?? undefined,
           });
