@@ -6,8 +6,11 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import extract from 'extract-zip';
 import { x as extractTar } from 'tar';
-import { XzReadableStream } from 'xz-decompress';
+import xzDecompress from 'xz-decompress';
 import { fetchWithProxy } from './proxy.ts';
+
+// xz-decompress 是 CJS 包；具名导入在原生 ESM 下会失败，默认导入再取属性才两边都通。
+const { XzReadableStream } = xzDecompress;
 
 export interface DownloadOptions {
   signal: AbortSignal;
