@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.6
+
+- 修复 Linux x64 下安装卡在 `onnxruntime-node` 的 NuGet 302 报错，以及 Windows 下与 `sherpa-onnx-node` 同进程共存时的 `onnxruntime.dll` 冲突：`onnxruntime-node` 钉在 `1.17.0`（自带 6 个平台/架构的 CPU 预编译二进制且无 `postinstall` 脚本，不再请求 `api.nuget.org` 拉取 CUDA 12 原生包，解包体积从 307 MB 降到 101 MB）；`loadOnnxRuntime()` 先加载 `sherpa-onnx-node`，让两者在 Windows 下共用 1.28.2 的 `onnxruntime.dll`。
+
 ## 0.1.5
 
 - 参考音频导入支持任意格式：WAV 校验改成看 RIFF/WAVE 头（改扩展名的假 WAV 会被挡下），其他格式（mp3/flac/m4a/ogg 等）交给 ffmpeg 转成 16 kHz 单声道 WAV；没装 ffmpeg 时提示先装或自行转换。说话页的选择器与拖拽文案同步放宽。
