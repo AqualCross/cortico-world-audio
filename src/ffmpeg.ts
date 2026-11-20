@@ -4,6 +4,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { downloadVerified, extractTarXz, extractZip } from './download.ts';
 import { isWindows } from './platform.ts';
+import { fetchWithProxy } from './proxy.ts';
 
 export type FfmpegSource = 'config' | 'path' | 'installed';
 
@@ -87,32 +88,50 @@ export async function detectFfmpeg(override = ''): Promise<FfmpegInfo> {
   return { path: null, version: null, source: null, detail: tried.length ? `试过 ${tried.length} 处，都不像 ffmpeg` : '没有找到 ffmpeg' };
 }
 
-/** 静态包：BtbN 的 Windows/Linux 构建，以及 macOS 的 evermeet（Intel）与 osxexperts（arm64）。 */
-export const FFMPEG_BUILD = 'autobuild-2026-11-01-12-49';
-const BTBN_NAME = 'ffmpeg-N-128273-g836436cfb9';
-const btbnUrl = (file: string, prefix = ''): string => `${prefix}https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_BUILD}/${file}`;
+/**
+ * 静态包：BtbN 的 Windows/Linux 构建，以及 macOS 的 evermeet（Intel）与 osxexperts（arm64）。
+ * BtbN 只保留最近几天的 autobuild，钉死某个 tag 过几天就会 404；`latest` 标签下资产名固定，
+ * 内容每天随构建更新。所以 Windows/Linux 不把大小与 SHA-256 写死在代码里，下载前从同一
+ * release 的 checksums.sha256 现取哈希。
+ */
+export const FFMPEG_RELEASE = 'latest';
+const BTBN_NAME = 'ffmpeg-master';
+const btbnUrl = (file: string, prefix = ''): string => `${prefix}https://github.com/BtbN/FFmpeg-Builds/releases/download/${FFMPEG_RELEASE}/${file}`;
 const btbnSources = (file: string): string[] => [btbnUrl(file, 'https://ghfast.top/'), btbnUrl(file, 'https://gh-proxy.com/'), btbnUrl(file)];
 
 export interface FfmpegAsset {
   name: string;
-  bytes: number;
-  sha256: string;
+  /** 钉死的大小与 SHA-256；BtbN 的滚动资产为 null，改从 checksums 现查。 */
+  bytes: number | null;
+  sha256: string | null;
+  /** 滚动资产的 SHA-256 清单地址（与压缩包同一 release）。 */
+  checksums?: readonly string[];
   archive: 'zip' | 'tar.xz';
   urls: readonly string[];
   /** 归档里要装的可执行文件名（不含 Windows 的 .exe）。 */
   binaries: readonly ('ffmpeg' | 'ffprobe')[];
 }
 
-const BTBN_WIN64 = `${BTBN_NAME}-win64-gpl.zip`;
-const BTBN_WINARM64 = `${BTBN_NAME}-winarm64-gpl.zip`;
-const BTBN_LINUX64 = `${BTBN_NAME}-linux64-gpl.tar.xz`;
-const BTBN_LINUXARM64 = `${BTBN_NAME}-linuxarm64-gpl.tar.xz`;
+const BTBN_WIN64 = `${BTBN_NAME}-latest-win64-gpl.zip`;
+const BTBN_WINARM64 = `${BTBN_NAME}-latest-winarm64-gpl.zip`;
+const BTBN_LINUX64 = `${BTBN_NAME}-latest-linux64-gpl.tar.xz`;
+const BTBN_LINUXARM64 = `${BTBN_NAME}-latest-linuxarm64-gpl.tar.xz`;
+
+const btbnAsset = (name: string): FfmpegAsset => ({
+  name,
+  bytes: null,
+  sha256: null,
+  checksums: btbnSources('checksums.sha256'),
+  archive: name.endsWith('.zip') ? 'zip' : 'tar.xz',
+  urls: btbnSources(name),
+  binaries: ['ffmpeg', 'ffprobe'],
+});
 
 const FFMPEG_ASSETS: Readonly<Record<string, FfmpegAsset>> = {
-  'win32-x64': { name: BTBN_WIN64, bytes: 201_757_577, sha256: 'ad99b0b94e68f2932391ad982c193b847c93ba41f17b7cafbf50710e15d45185', archive: 'zip', urls: btbnSources(BTBN_WIN64), binaries: ['ffmpeg', 'ffprobe'] },
-  'win32-arm64': { name: BTBN_WINARM64, bytes: 142_365_154, sha256: '2a8b73ee16fd7291dbb79575737b0f1bdd69ca0c9cc698463de9762eaa4adcc3', archive: 'zip', urls: btbnSources(BTBN_WINARM64), binaries: ['ffmpeg', 'ffprobe'] },
-  'linux-x64': { name: BTBN_LINUX64, bytes: 157_419_352, sha256: 'afdb03bfa9e6cfaa4587a1d663d7475bdbc7af40fe4156cacc6dba2c36f82b85', archive: 'tar.xz', urls: btbnSources(BTBN_LINUX64), binaries: ['ffmpeg', 'ffprobe'] },
-  'linux-arm64': { name: BTBN_LINUXARM64, bytes: 132_513_848, sha256: '4ba9cddb940a0cdbfd8fda5fa72566a660b9310803c37b7d7286786f2fa80a6c', archive: 'tar.xz', urls: btbnSources(BTBN_LINUXARM64), binaries: ['ffmpeg', 'ffprobe'] },
+  'win32-x64': btbnAsset(BTBN_WIN64),
+  'win32-arm64': btbnAsset(BTBN_WINARM64),
+  'linux-x64': btbnAsset(BTBN_LINUX64),
+  'linux-arm64': btbnAsset(BTBN_LINUXARM64),
   'darwin-x64': { name: 'ffmpeg-9.0.2.zip', bytes: 26_198_325, sha256: '4acc0be580f9b2788029eb7bd4d645ff87968911b0a62aeeb3940d42d54558d5', archive: 'zip', urls: ['https://evermeet.cx/ffmpeg/ffmpeg-9.0.2.zip'], binaries: ['ffmpeg'] },
   'darwin-arm64': { name: 'ffmpeg902arm.zip', bytes: 22_665_869, sha256: '07e00300593799005b060c03a99fe648b1edda0f30c36b0c1adafe8e3247e586', archive: 'zip', urls: ['https://www.osxexperts.net/ffmpeg902arm.zip'], binaries: ['ffmpeg'] },
 };
@@ -120,6 +139,39 @@ const FFMPEG_ASSETS: Readonly<Record<string, FfmpegAsset>> = {
 /** 这台机器该下哪一份；没有对应资产时返回 null。 */
 export function ffmpegAssetFor(platform: string = process.platform, arch: string = process.arch): FfmpegAsset | null {
   return FFMPEG_ASSETS[`${platform}-${arch}`] ?? null;
+}
+
+/** 从 `checksums.sha256` 里取某个文件的 SHA-256。行格式是 `<64 位十六进制>  <文件名>`。 */
+export function parseChecksums(text: string, name: string): string | null {
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^([a-f0-9]{64})\s+\*?(.+?)\s*$/i.exec(line);
+    if (!match) continue;
+    const file = match[2].replace(/^\.\//, '').split(/[\\/]/).pop();
+    if (file === name) return match[1].toLowerCase();
+  }
+  return null;
+}
+
+/** 滚动资产的 SHA-256：清单和压缩包同一 release，按同样的镜像顺序取。 */
+async function checksumFor(asset: FfmpegAsset, signal: AbortSignal): Promise<string | undefined> {
+  if (asset.sha256) return asset.sha256;
+  const errors: string[] = [];
+  for (const url of asset.checksums ?? []) {
+    try {
+      const res = await fetchWithProxy(url, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+        redirect: 'follow',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const sha256 = parseChecksums(await res.text(), asset.name);
+      if (sha256) return sha256;
+      throw new Error(`清单里没有 ${asset.name}`);
+    } catch (err) {
+      if (signal.aborted) throw err;
+      errors.push(`${url}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  throw new Error(`取不到 ${asset.name} 的校验和：\n${errors.slice(-3).join('\n')}`);
 }
 
 /** 下载静态包，把 ffmpeg（Windows 上还有 ffprobe）放到 `<into>/`。 */
@@ -133,7 +185,8 @@ export async function installFfmpeg(into: string, signal: AbortSignal, onBytes?:
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true });
   const archive = join(tmp, asset.archive === 'zip' ? 'ffmpeg.zip' : 'ffmpeg.tar.xz');
-  await downloadVerified([...asset.urls], archive, { signal, onBytes, bytes: asset.bytes, sha256: asset.sha256 });
+  const sha256 = await checksumFor(asset, signal);
+  await downloadVerified([...asset.urls], archive, { signal, onBytes, bytes: asset.bytes ?? undefined, sha256 });
   if (asset.archive === 'zip') await extractZip(archive, tmp);
   else await extractTarXz(archive, tmp);
   rmSync(archive, { force: true });

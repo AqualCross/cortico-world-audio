@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parseNvidiaSmi, tierFor, CUDA_MIN_VRAM_MB } from '../src/gpu.ts';
 import { parseUvVersion, UV_VERSION, uvAssetFor, uvSources } from '../src/uv.ts';
-import { FFMPEG_BUILD, ffmpegAssetFor } from '../src/ffmpeg.ts';
+import { ffmpegAssetFor } from '../src/ffmpeg.ts';
 import { missingWeights, isProjectDir, projectDir, weightsDir, ProjectEnvJob } from '../src/install.ts';
 import { FIRERED_VAD_FILES, TIER_WEIGHTS } from '../src/catalog.ts';
 import { Job } from '../src/jobs.ts';
@@ -63,17 +63,22 @@ describe('uv 识别', () => {
     expect(uvAssetFor('linux', 'x64')!.binary).toBe('uv');
   });
 
-  it('每个平台都有钉死的 ffmpeg 资产，地址不用 releases/latest', () => {
+  it('每个平台都有可下载的 ffmpeg 资产：macOS 钉哈希，BtbN 走 latest 并现查清单', () => {
     for (const key of ['win32-x64', 'win32-arm64', 'linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64']) {
       const [platform, arch] = key.split('-');
       const asset = ffmpegAssetFor(platform, arch);
       expect(asset, key).toBeTruthy();
-      expect(asset!.sha256).toMatch(/^[a-f0-9]{64}$/);
-      expect(asset!.bytes).toBeGreaterThan(0);
       expect(asset!.urls.length).toBeGreaterThan(0);
-      expect(asset!.urls.every((url) => !url.includes('/latest/'))).toBe(true);
-      for (const url of asset!.urls) {
-        if (url.includes('BtbN/FFmpeg-Builds')) expect(url).toContain('/FFmpeg-Builds/releases/download/' + FFMPEG_BUILD + '/');
+      const btbn = asset!.urls.filter((url) => url.includes('BtbN/FFmpeg-Builds'));
+      if (btbn.length > 0) {
+        // BtbN 会清掉旧 autobuild，只能走资产名固定的 latest；哈希从同 release 的清单现取。
+        expect(asset!.sha256, key).toBe(null);
+        expect(asset!.checksums?.length, key).toBeGreaterThan(0);
+        for (const url of btbn) expect(url).toContain('/FFmpeg-Builds/releases/download/latest/');
+        for (const url of asset!.checksums!) expect(url).toContain('/FFmpeg-Builds/releases/download/latest/checksums.sha256');
+      } else {
+        expect(asset!.sha256, key).toMatch(/^[a-f0-9]{64}$/);
+        expect(asset!.bytes, key).toBeGreaterThan(0);
       }
     }
     expect(ffmpegAssetFor('freebsd', 'x64')).toBe(null);
