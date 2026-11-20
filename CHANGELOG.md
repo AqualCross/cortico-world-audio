@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.9
+
+- 补齐 `cortico-world-compose` 的致谢与 MIT 许可：`src/music-abc/band.js` 的律动型与 band 编曲器改编自其 `src/grooves.ts` / `src/arrange.ts`（Copyright (c) 2026 Phantivia）。README、`THIRD_PARTY_NOTICES.md` 和 `licenses/cortico-world-compose-MIT.txt` 都记录了来源。
+- 发布记录：0.1.7、0.1.8 的说明已在仓库与 npm 包的 `CHANGELOG.md` 里；0.1.7 当时从工作区直接发布，没有独立提交，因此无法补出准确的 tag。0.1.8 起在发布提交上打 Git 标签。
+
 ## 0.1.8
 
 - 修复 ffmpeg 下载 404：BtbN 的 autobuild 标签只保留最近几天，之前钉死的 `autobuild-2026-11-01-12-49` 已被上游清理。Windows/Linux 改用 `latest` 标签下名字固定的资产，下载前从同一 release 的 `checksums.sha256` 现取 SHA-256；macOS 仍钉版本与哈希。
