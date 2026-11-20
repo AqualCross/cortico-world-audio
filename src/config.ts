@@ -135,7 +135,7 @@ export const AUDIO_DEFAULTS: AudioConfigSection = {
   ffmpegPath: '',
   volume: 80,
   balance: 0,
-  music: { abc: { instrument: '', delivery: 'event', eventDelivery: 'archive' } },
+  music: { abc: { instrument: '', backing: 'off', groove: 'pop', energy: 3, delivery: 'event', eventDelivery: 'archive' } },
   subtitle: {
     enabled: true,
     size: 34,

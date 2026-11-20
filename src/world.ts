@@ -224,6 +224,19 @@ export const AUDIO_TOOL_DECLS: ReadonlyArray<Omit<ToolDef, 'handler'>> = [
     },
   },
   {
+    name: 'audio_open',
+    description: 'Open an audio file in the computer\'s default player application, where the person can pause, seek and replay it themselves. Accepts a local path or a log:/mem: blob handle. This does not use the playback queue.',
+    tags: ['act'],
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        path: { type: 'string', description: 'Absolute path to the audio file; give this or handle.' },
+        handle: { type: 'string', description: 'A log:/mem: blob handle for the audio; give this or path.' },
+      },
+    },
+  },
+  {
     name: 'audio_say',
     description: 'Say a line with the configured speech engine and play it through the audio queue. Returns at once: synthesis and playback run in the background, and only a failure comes back as an audio.failed event. With silent=true it synthesizes in the background without playback and the file path comes back as an audio.say_done event.',
     tags: ['speak'],
@@ -327,6 +340,7 @@ function decl(name: string): Omit<ToolDef, 'handler'> {
 export const TOOL_SUMMARIES: Readonly<Record<string, { zh: string; en: string }>> = {
   audio_status: { zh: '报告语音能力此刻的接入状态。', en: 'Reports which audio capabilities are wired up right now.' },
   audio_play: { zh: '播放一个音频文件，后面的排队。', en: 'Plays an audio file; later requests queue up.' },
+  audio_open: { zh: '用系统默认播放器打开一个音频文件。', en: 'Opens an audio file in the system default player.' },
   audio_say: { zh: '按当前引擎合成一句话并播放。', en: 'Synthesizes a line with the current engine and plays it.' },
   audio_convert: { zh: '把一段音频换成当前变声音色，转完自动播放。', en: 'Converts an audio file into the configured voice and plays it.' },
   audio_sing: { zh: '用 DiffSinger 把歌词唱出来并播放。', en: 'Sings lyrics with DiffSinger and plays the song.' },
@@ -334,9 +348,9 @@ export const TOOL_SUMMARIES: Readonly<Record<string, { zh: string; en: string }>
   audio_queue: { zh: '查看或改动播放队列。', en: 'Inspect or change the playback queue.' },
   audio_separate: { zh: '把歌曲分成人声和伴奏。', en: 'Separate a song into vocals and accompaniment.' },
   audio_mix: { zh: '按音量和时间偏移混合多条音轨。', en: 'Mix tracks with individual levels and start offsets.' },
-  audio_abc_music_score: { zh: '检查、保存与读取 ABC 曲谱和版本。', en: 'Validate, save and read ABC scores.' },
-  audio_abc_music_play: { zh: '把 ABC 曲谱渲染为采样音源 WAV，并保存作品。', en: 'Render ABC to sampled audio and retain a score snapshot.' },
-  audio_abc_music_control: { zh: '列出音源预设、查看状态或设置乐器与交付方式。', en: 'List SoundFont presets, read status or configure instruments and delivery.' },
+  audio_abc_music_score: { zh: '检查、保存与读取 ABC 曲谱、版本和草稿。', en: 'Validate, save and read ABC scores and drafts.' },
+  audio_abc_music_play: { zh: '把 ABC 曲谱渲染为采样音源 WAV，回执带测量结果，并保存作品。', en: 'Render ABC to sampled audio, retain a score snapshot and report measured facts.' },
+  audio_abc_music_control: { zh: '列出音源预设、查看状态或设置乐器、伴奏与交付方式。', en: 'List SoundFont presets, read status or configure instruments, backing and delivery.' },
 };
 
 /** uv 的安装任务；识别到本机已有 uv 时 present() 直接为真。 */
@@ -607,6 +621,7 @@ export class AudioWorld implements World {
     const handlers: Array<ToolDef['handler']> = [
       this.statusTool().handler!,
       this.playTool().handler!,
+      this.openTool().handler!,
       this.sayTool().handler!,
       this.convertTool().handler!,
       this.singTool().handler!,
@@ -777,7 +792,7 @@ export class AudioWorld implements World {
       if (method === 'file') return this.music.file(String(args[0]), Number(args[1] ?? 0));
       if (method === 'abc') {
         const [abcPanel, abcMethod, abcArgs = []] = args;
-        if (!['scores', 'works', 'instruments'].includes(String(abcPanel)) || !Array.isArray(abcArgs)) throw new Error('未知 ABC 面板。');
+        if (!['scores', 'arrange', 'works', 'instruments'].includes(String(abcPanel)) || !Array.isArray(abcArgs)) throw new Error('未知 ABC 面板。');
         return this.abc.invoke(String(abcPanel), String(abcMethod), abcArgs);
       }
       throw new Error(`未知音乐方法：${method}`);
@@ -1991,6 +2006,31 @@ export class AudioWorld implements World {
         const balance = typeof args.balance === 'number' ? clampBalance(args.balance) : undefined;
         const { id, position } = this.queue.enqueue({ path, volume, balance, origin: 'tool' });
         return `已加入播放队列 ${id}（第 ${position} 条）：${path}`;
+      },
+    };
+  }
+
+  private openTool(): ToolDef {
+    return {
+      ...decl('audio_open'),
+      handler: async (args) => {
+        let path = '';
+        try {
+          path = this.inputFile(args);
+        } catch (err) {
+          return `[audio_open 没执行] ${err instanceof Error ? err.message : String(err)}`;
+        }
+        if (!existsSync(path)) return `[audio_open 没执行] 没有这个文件：${path}`;
+        const [command, commandArgs] = process.platform === 'win32'
+          ? ['cmd', ['/c', 'start', '', path]]
+          : process.platform === 'darwin' ? ['open', [path]] : ['xdg-open', [path]];
+        try {
+          const child = spawn(command, commandArgs, { detached: true, stdio: 'ignore', windowsHide: true });
+          child.unref();
+          return `已请系统用默认播放器打开：${path}`;
+        } catch (err) {
+          return `[audio_open 没执行] ${err instanceof Error ? err.message : String(err)}`;
+        }
       },
     };
   }

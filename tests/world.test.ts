@@ -367,6 +367,13 @@ describe('Audio World', () => {
     expect(snap.current?.balance).toBe(100);
   });
 
+  it('audio_open 对不存在的文件只回执，不拉起播放器', async () => {
+    const world = AUDIO.create(fakeWorldContext(AUDIO, { scratchDir }));
+    const open = world.tools().find((tool) => tool.name === 'audio_open')!;
+    const out = await open.handler({ path: join(scratchDir, 'missing.wav') }, {} as ToolCallContext);
+    expect(String(out)).toContain('没有这个文件');
+  });
+
   it('audio_say 把左右平衡记到这一句上并掐到范围内', async () => {
     const world = AUDIO.create(fakeWorldContext(AUDIO, { scratchDir }));
     // 占住播放，让这一句留在队列当前条目上，不真的去合成/播放。
