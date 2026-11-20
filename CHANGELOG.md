@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.8
+
+- 修复 ffmpeg 下载 404：BtbN 的 autobuild 标签只保留最近几天，之前钉死的 `autobuild-2026-11-01-12-49` 已被上游清理。Windows/Linux 改用 `latest` 标签下名字固定的资产，下载前从同一 release 的 `checksums.sha256` 现取 SHA-256；macOS 仍钉版本与哈希。
+
+## 0.1.7
+
+- 音乐页改为一级页签：分离、混音、作曲、编曲、音源、记录。原「乐谱」更名「作曲」，原「乐器」更名「音源」；「作品」并入「记录」，与分离/混音作品同页、同一卡片格式。
+- 作曲/编曲增加 band 编曲：11 种律动、energy 1–5、分段覆盖、停拍、过门、swing、人性化、每角色混音；引号和弦驱动伴奏，写谱不变。
+- 渲染回执带测量事实（小节、声部音域、超域、重复/节奏、级进/跳进、和弦冲突音、RMS/峰值）；和弦冲突音只报调外冲突，调内 9/11/13 度张力不误报。
+- 检查/渲染失败保留 ABC 草稿，`audio_abc_music_score` 支持 `drafts` / `draft`。
+- 写谱支持动机宏（`% motif 名字: ...`、`@名字+1`）和命名块局部修订（`% block: A` … `% end: A`，`action=revise`）。
+- 作曲/编曲增加「导出 MIDI」，按当前谱/编曲设置即时生成，不落 MIDI 文件。作品记录只保存 WAV，不再保存谱面快照、MIDI/ABC 文件。
+- 新增 `audio_open`：用系统默认播放器打开音频文件，不走播放队列。
+
 ## 0.1.6
 
 - 修复 Linux x64 下安装卡在 `onnxruntime-node` 的 NuGet 302 报错，以及 Windows 下与 `sherpa-onnx-node` 同进程共存时的 `onnxruntime.dll` 冲突：`onnxruntime-node` 钉在 `1.17.0`（自带 6 个平台/架构的 CPU 预编译二进制且无 `postinstall` 脚本，不再请求 `api.nuget.org` 拉取 CUDA 12 原生包，解包体积从 307 MB 降到 101 MB）；`loadOnnxRuntime()` 先加载 `sherpa-onnx-node`，让两者在 Windows 下共用 1.28.2 的 `onnxruntime.dll`。
